@@ -17,7 +17,7 @@ users_db.append(data.json())
 # find bruger via username
 def find_user_by_username(username):
     for user in users_db:
-        if user['username'] == username
+        if user['username'] == username:
             return user
     return None
 
@@ -80,4 +80,4 @@ def logout():
     return jsonify(), 201
 
 
-app.run(debug=True, host='0.0.0.0')
+app.run(debug=True)
