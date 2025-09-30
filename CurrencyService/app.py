@@ -28,4 +28,4 @@ def convert_currency():
         }), 200
 
 
-app.run(port=5002)
+app.run(host='0.0.0.0', port=5000)
