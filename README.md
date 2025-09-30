@@ -1,8 +1,15 @@
 # Shopping Site Microservices
 Demo i klassen e25
 
-## Tirsdag d. 23/9
 
-* Currency Service
-* Account Service
-* Product Catalog Service
+## How to run
+
+```
+ docker-compose up -d --build
+
+```
+## How to shut down
+```
+ docker-compose down
+
+```
