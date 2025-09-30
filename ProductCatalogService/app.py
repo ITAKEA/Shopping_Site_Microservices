@@ -36,4 +36,4 @@ def get_products_by_category(category_name):
     return jsonify(filtered_products)
 
 
-app.run(port=5002)
+app.run(host='0.0.0.0', port=5000)

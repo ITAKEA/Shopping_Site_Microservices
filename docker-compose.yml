@@ -1,0 +1,34 @@
+services:
+  acc:
+    build:
+      context: ./AccountService
+      dockerfile: Dockerfile
+    ports:
+      - "5010:5000"
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  cur:
+    build:
+      context: ./CurrencyService
+      dockerfile: Dockerfile
+    ports:
+      - "5020:5000"
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  pro:
+    build:
+      context: ./ProductCatalogService
+      dockerfile: Dockerfile
+    ports:
+      - "5030:5000"
+    networks:
+      - app-network
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge

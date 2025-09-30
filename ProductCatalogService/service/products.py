@@ -39,7 +39,7 @@ def _calculate_price(price):
         "from_currency": "USD",
         "to_currency": "DKK"
     }
-    response = requests.post('http://localhost:5001/convert', json=body)
+    response = requests.post('http://cur:5000/convert', json=body)
     
     if response.status_code == 200:
         data = response.json()
