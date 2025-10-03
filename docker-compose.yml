@@ -29,6 +29,18 @@ services:
       - app-network
     restart: unless-stopped
 
+  ui:
+    build:
+      context: ./UIService
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    networks:
+      - app-network
+    restart: unless-stopped
+    depends_on:
+      - pro
+
 networks:
   app-network:
     driver: bridge
