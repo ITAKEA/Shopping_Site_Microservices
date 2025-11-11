@@ -3,7 +3,7 @@ import requests
 
 st.title("Product Catalog")
 
-PRODUCT_SERVICE_URL = "http://pro:5000/products"
+PRODUCT_SERVICE_URL = "http://products:5000/products"
 response = requests.get(PRODUCT_SERVICE_URL)
 products = response.json()
 

@@ -19,7 +19,7 @@ services:
       - app-network
     restart: unless-stopped
 
-  pro:
+  products:
     build:
       context: ./ProductCatalogService
       dockerfile: Dockerfile
@@ -41,7 +41,7 @@ services:
       - app-network
     restart: unless-stopped
     depends_on:
-      - pro
+      - products
 
 networks:
   app-network:
