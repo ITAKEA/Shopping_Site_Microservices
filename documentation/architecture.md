@@ -4,8 +4,9 @@ This document provides a comprehensive architectural overview of the Shopping Si
 
 ## System Overview
 
-The application consists of 4 microservices deployed using Docker:
-- **Account Service**: User registration and authentication
+The application consists of 5 microservices deployed using Docker:
+- **API Gateway**: Central routing and entry point for all services
+- **Account Service**: User registration and authentication (modularized with separate database layer)
 - **Currency Service**: Currency conversion functionality
 - **Product Catalog Service**: Product listing and management
 - **UI Service**: Web-based user interface (Streamlit)
@@ -19,12 +20,16 @@ graph TB
     end
 
     subgraph Docker["Docker Network (app-network)"]
+        subgraph Gateway["API Gateway :8000"]
+            GatewayService["Flask REST API<br/>- Request Routing<br/>- Simple Proxy<br/>- Unified API"]
+        end
+
         subgraph UI["UI Service :8501"]
             Streamlit["Streamlit Web Interface<br/>- Product Display<br/>- Images & Details<br/>- Prices in DKK"]
         end
 
         subgraph Account["Account Service :5010"]
-            AccService["Flask REST API<br/>- User Registration<br/>- Login/Logout<br/>- Profile Management<br/><br/>In-Memory Storage"]
+            AccService["Flask REST API<br/>- User Registration<br/>- Login/Logout<br/>- Profile Management<br/><br/>SQLite Database"]
         end
 
         subgraph Currency["Currency Service :5020"]
@@ -42,15 +47,18 @@ graph TB
     end
 
     Browser -->|HTTP :8501| Streamlit
-    APIClient -->|HTTP :5010| AccService
-    APIClient -->|HTTP :5020| CurService
-    APIClient -->|HTTP :5030| ProdService
+    APIClient -->|HTTP :8000| GatewayService
+
+    GatewayService -->|/api/account/*| AccService
+    GatewayService -->|/api/currency/*| CurService
+    GatewayService -->|/api/products/*| ProdService
 
     Streamlit -->|GET /products| ProdService
+    Streamlit -->|POST /login, /profile| AccService
     ProdService -->|POST /convert| CurService
     ProdService -->|GET products| DummyJSON
-    AccService -->|GET users| DummyJSON
 
+    style Gateway fill:#ffe8e8
     style UI fill:#e1f5ff
     style Account fill:#fff4e1
     style Currency fill:#e8f5e9
@@ -64,11 +72,27 @@ graph TB
 sequenceDiagram
     actor User
     participant UI as UI Service<br/>(Streamlit)
+    participant AS as Account<br/>Service
     participant PS as Product Catalog<br/>Service
     participant CS as Currency<br/>Service
     participant Ext as External API<br/>(dummyjson)
 
     User->>UI: Access Web Interface
+
+    alt User Registration
+        User->>UI: Register new account
+        UI->>AS: POST /profile<br/>{username, password}
+        AS-->>UI: Registration success
+        UI-->>User: Show success message
+    end
+
+    alt User Login
+        User->>UI: Login
+        UI->>AS: POST /login<br/>{username, password}
+        AS-->>UI: Auth token in header
+        UI-->>User: Login successful
+    end
+
     UI->>PS: GET /products
     PS->>Ext: Fetch product data
     Ext-->>PS: Product list (USD prices)
@@ -86,6 +110,13 @@ sequenceDiagram
 
 ```mermaid
 graph LR
+    subgraph Gateway["API Gateway :8000"]
+        G1["/api/account/*<br/>Account Routes"]
+        G2["/api/currency/*<br/>Currency Routes"]
+        G3["/api/products/*<br/>Product Routes"]
+        G4["/health<br/>Health Check"]
+    end
+
     subgraph Account["Account Service :5010"]
         A1["/profile - POST<br/>Register User"]
         A2["/profile - GET<br/>View Profile"]
@@ -106,15 +137,29 @@ graph LR
     end
 
     subgraph UI["UI Service :8501"]
-        U1["/ (Root)<br/>Web Interface"]
+        U1["/ (Root)<br/>Web Interface<br/>Login & Registration"]
     end
+
+    G1 --> A1
+    G1 --> A2
+    G1 --> A3
+    G1 --> A4
+    G1 --> A5
+    G2 --> C1
+    G3 --> P1
+    G3 --> P2
+    G3 --> P3
+    G3 --> P4
 
     P1 --> C1
     P2 --> C1
     P3 --> C1
     P4 --> C1
     U1 --> P1
+    U1 --> A4
+    U1 --> A1
 
+    style Gateway fill:#ffe8e8
     style Account fill:#fff4e1
     style Currency fill:#e8f5e9
     style Product fill:#f3e5f5
@@ -127,6 +172,7 @@ graph LR
 graph TB
     subgraph Deployment["Docker Compose Deployment"]
         subgraph Network["app-network (Bridge Network)"]
+            GW["Container: gateway<br/>Image: python:3.12-slim<br/>Port: 8000:5000<br/>Restart: unless-stopped<br/>depends_on: acc, cur, products"]
             ACC["Container: acc<br/>Image: python:slim-trixie<br/>Port: 5010:5000<br/>Restart: unless-stopped"]
             CUR["Container: cur<br/>Image: python:3.12-slim<br/>Port: 5020:5000<br/>Restart: unless-stopped"]
             PROD["Container: products<br/>Image: python:3.12-slim<br/>Port: 5030:5000<br/>Restart: unless-stopped<br/>depends_on: cur"]
@@ -134,9 +180,13 @@ graph TB
         end
     end
 
+    ACC -.->|dependency| GW
+    CUR -.->|dependency| GW
     CUR -.->|dependency| PROD
+    PROD -.->|dependency| GW
     PROD -.->|dependency| UI_C
 
+    style GW fill:#ffe8e8
     style ACC fill:#fff4e1
     style CUR fill:#e8f5e9
     style PROD fill:#f3e5f5
@@ -212,17 +262,22 @@ flowchart TD
 
 ```mermaid
 graph TD
+    GW[API Gateway<br/>Flask :8000]
     UI[UI Service<br/>Streamlit :8501]
     PS[Product Catalog Service<br/>Flask :5030]
     CS[Currency Service<br/>Flask :5020]
     AS[Account Service<br/>Flask :5010]
     EXT[External APIs<br/>dummyjson.com]
 
+    GW -->|routes to| AS
+    GW -->|routes to| CS
+    GW -->|routes to| PS
     UI -->|depends on| PS
+    UI -->|calls| AS
     PS -->|depends on| CS
     PS -->|calls| EXT
-    AS -->|calls| EXT
 
+    style GW fill:#ffe8e8
     style UI fill:#e1f5ff
     style PS fill:#f3e5f5
     style CS fill:#e8f5e9
@@ -233,15 +288,21 @@ graph TD
 ## Key Architectural Characteristics
 
 ### Communication Pattern
+- **API Gateway Pattern**: Simple central entry point routing requests to services
 - **Synchronous HTTP/REST**: All inter-service communication uses REST APIs
 - **No Message Queues**: No asynchronous messaging implemented
 - **Docker DNS**: Services discover each other via container names
+- **Simple Proxy**: Gateway calls services directly and returns responses
 
 ### Data Storage
-- **Account Service**: In-memory list (planned migration to SQLite)
+- **Account Service**: SQLite database with modularized database layer in `database.py`
+  - Separate database module for improved code organization
+  - Persistent storage in `users.db` file
+  - Schema: `users` table with id, username, password
+  - Functions: `init_db()`, `get_db_connection()`, `find_user_by_username()`, `add_user()`, `get_all_users()`
 - **Currency Service**: In-memory dictionary with static exchange rates
 - **Product Catalog**: External API (dummyjson.com) - no local storage
-- **No Persistent Database**: All data is volatile and lost on restart
+- **Partial Persistence**: User data persists between restarts, product/currency data is volatile
 
 ### Scalability
 - **Independent Services**: Each service can be scaled independently
@@ -250,13 +311,14 @@ graph TD
 
 ### Security Considerations
 - **Authentication**: Account service uses Authorization header
-- **No API Gateway**: Services exposed directly on different ports
-- **Plain Text Data**: Credentials stored in-memory without encryption
+- **API Gateway**: Simple central entry point on port 8000, services also exposed on individual ports
+- **Minimal Error Handling**: Gateway returns responses as-is from services
+- **Plain Text Data**: Credentials stored without encryption
 - **No HTTPS**: All communication over HTTP
 
 ### External Dependencies
-- **dummyjson.com**: Provides product and user seed data
-- **Single Point of Failure**: External API unavailability affects service
+- **dummyjson.com**: Provides product seed data
+- **Single Point of Failure**: External API unavailability affects Product Catalog Service
 
 ## Deployment Instructions
 
@@ -268,21 +330,22 @@ graph TD
    ```
 
 3. **Access Points**:
+   - API Gateway: http://localhost:8000
    - Web UI: http://localhost:8501
-   - Account API: http://localhost:5010
-   - Currency API: http://localhost:5020
-   - Product API: http://localhost:5030
+   - Account API: http://localhost:5010 (or via Gateway: http://localhost:8000/api/account/*)
+   - Currency API: http://localhost:5020 (or via Gateway: http://localhost:8000/api/currency/*)
+   - Product API: http://localhost:5030 (or via Gateway: http://localhost:8000/api/products/*)
 
 4. **Service Startup Order**:
-   - Currency Service starts first
+   - Account, Currency Services start first (independent)
    - Product Catalog Service (depends on Currency)
+   - API Gateway (depends on Account, Currency, Product Catalog)
    - UI Service (depends on Product Catalog)
-   - Account Service (independent)
 
 ## Future Enhancement Opportunities
 
-1. **Persistent Storage**: Migrate to SQLite or PostgreSQL
-2. **API Gateway**: Add central routing and authentication layer
+1. **Enhanced Storage**: Migrate Product/Currency services to persistent storage
+2. **Gateway Authentication**: Add JWT/OAuth2 authentication at gateway level
 3. **Caching**: Implement Redis for product and currency data
 4. **Message Queue**: Add RabbitMQ/Kafka for async operations
 5. **Service Discovery**: Implement Consul or Eureka

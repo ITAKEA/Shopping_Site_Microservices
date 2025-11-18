@@ -5,21 +5,17 @@
 """
 
 from flask import Flask, jsonify, request, make_response
-import requests
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from database import find_user_by_username, add_user
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 app = Flask(__name__)
+app.config['JWT_SECRET_KEY'] = os.getenv('KEY')
 
-# DATABASE - skal skiftes til sqlite
-users_db = []
-data = requests.get('https://dummyjson.com/users/1')
-users_db.append(data.json())
-
-# find bruger via username
-def find_user_by_username(username):
-    for user in users_db:
-        if user['username'] == username:
-            return user
-    return None
+jwt = JWTManager(app)
 
 # Register en ny bruger
 @app.route('/profile', methods=['POST'])
@@ -34,26 +30,19 @@ def register():
     if find_user_by_username(username):
         return jsonify({'message': 'User already exists'}), 400
 
-    new_user = {
-        "id": len(users_db) + 1,
-        "username": username,
-        "password": password,
-    }
-
-    users_db.append(new_user) 
+    add_user(username, password)
     return jsonify({'message': f'User registered successfully'}), 201
 
 @app.route('/profile', methods=['GET'])
+@jwt_required()
 def view_profile():
-    data = request.headers.get('Authorization')
-    if not data:
-        return jsonify({'message': 'User not logged in'}), 401
+    current_user = get_jwt_identity()
 
-    user = find_user_by_username(data)
+    user = find_user_by_username(current_user)
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
-    return jsonify(users_db), 200
+    return jsonify({'username': user['username'], 'id': user['id']}), 200
 
 @app.route('/profile', methods=['PUT'])
 def edit_profile():
@@ -65,15 +54,20 @@ def login():
     username = data.get('username')
     password = data.get('password')
 
+    if not username or not password:
+        return jsonify({'message': 'Missing username or password'}), 400
+
     user = find_user_by_username(username)
 
-    if user and user['password'] == password:
-        # komponer et response
-        response = make_response(jsonify({'message': f'Login successful'}), 200)
-        response.headers['Authorization'] = username
-        return response
-    
-    return jsonify({'message': 'Invalid username or password'}), 401
+    if not user or user['password'] != password:
+        return jsonify({'message': 'Invalid username or password'}), 401
+
+    # Create JWT token
+    token = create_access_token(identity=username)
+
+    response = make_response(jsonify({'message': 'Login successful'}), 200)
+    response.headers['Authorization'] = f'Bearer {token}'
+    return response
 
 @app.route('/logout', methods=['POST'])
 def logout():

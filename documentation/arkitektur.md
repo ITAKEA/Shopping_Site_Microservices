@@ -4,8 +4,9 @@ Dette dokument giver et omfattende arkitektonisk overblik over Shopping Site Mic
 
 ## System Oversigt
 
-Applikationen består af 4 microservices deployed ved hjælp af Docker:
-- **Account Service**: Brugerregistrering og autentificering
+Applikationen består af 5 microservices deployed ved hjælp af Docker:
+- **API Gateway**: Central routing og indgangspunkt for alle services
+- **Account Service**: Brugerregistrering og autentificering (modulariseret med separat database lag)
 - **Currency Service**: Valutakonverteringsfunktionalitet
 - **Product Catalog Service**: Produktlisting og administration
 - **UI Service**: Web-baseret brugerinterface (Streamlit)
@@ -19,12 +20,16 @@ graph TB
     end
 
     subgraph Docker["Docker Network (app-network)"]
+        subgraph Gateway["API Gateway :8000"]
+            GatewayService["Flask REST API<br/>- Request Routing<br/>- Simple Proxy<br/>- Unified API"]
+        end
+
         subgraph UI["UI Service :8501"]
             Streamlit["Streamlit Web Interface<br/>- Product Display<br/>- Images & Details<br/>- Prices in DKK"]
         end
 
         subgraph Account["Account Service :5010"]
-            AccService["Flask REST API<br/>- User Registration<br/>- Login/Logout<br/>- Profile Management<br/><br/>In-Memory Storage"]
+            AccService["Flask REST API<br/>- User Registration<br/>- Login/Logout<br/>- Profile Management<br/><br/>SQLite Database"]
         end
 
         subgraph Currency["Currency Service :5020"]
@@ -42,15 +47,18 @@ graph TB
     end
 
     Browser -->|HTTP :8501| Streamlit
-    APIClient -->|HTTP :5010| AccService
-    APIClient -->|HTTP :5020| CurService
-    APIClient -->|HTTP :5030| ProdService
+    APIClient -->|HTTP :8000| GatewayService
+
+    GatewayService -->|/api/account/*| AccService
+    GatewayService -->|/api/currency/*| CurService
+    GatewayService -->|/api/products/*| ProdService
 
     Streamlit -->|GET /products| ProdService
+    Streamlit -->|POST /login, /profile| AccService
     ProdService -->|POST /convert| CurService
     ProdService -->|GET products| DummyJSON
-    AccService -->|GET users| DummyJSON
 
+    style Gateway fill:#ffe8e8
     style UI fill:#e1f5ff
     style Account fill:#fff4e1
     style Currency fill:#e8f5e9
@@ -64,11 +72,27 @@ graph TB
 sequenceDiagram
     actor User
     participant UI as UI Service<br/>(Streamlit)
+    participant AS as Account<br/>Service
     participant PS as Product Catalog<br/>Service
     participant CS as Currency<br/>Service
     participant Ext as External API<br/>(dummyjson)
 
     User->>UI: Access Web Interface
+
+    alt User Registration
+        User->>UI: Register new account
+        UI->>AS: POST /profile<br/>{username, password}
+        AS-->>UI: Registration success
+        UI-->>User: Show success message
+    end
+
+    alt User Login
+        User->>UI: Login
+        UI->>AS: POST /login<br/>{username, password}
+        AS-->>UI: Auth token in header
+        UI-->>User: Login successful
+    end
+
     UI->>PS: GET /products
     PS->>Ext: Fetch product data
     Ext-->>PS: Product list (USD prices)
@@ -106,7 +130,7 @@ graph LR
     end
 
     subgraph UI["UI Service :8501"]
-        U1["/ (Root)<br/>Web Interface"]
+        U1["/ (Root)<br/>Web Interface<br/>Login & Registration"]
     end
 
     P1 --> C1
@@ -114,6 +138,8 @@ graph LR
     P3 --> C1
     P4 --> C1
     U1 --> P1
+    U1 --> A4
+    U1 --> A1
 
     style Account fill:#fff4e1
     style Currency fill:#e8f5e9
@@ -219,6 +245,7 @@ graph TD
     EXT[External APIs<br/>dummyjson.com]
 
     UI -->|depends on| PS
+    UI -->|calls| AS
     PS -->|depends on| CS
     PS -->|calls| EXT
     AS -->|calls| EXT
@@ -233,15 +260,21 @@ graph TD
 ## Nøgle Arkitektoniske Karakteristika
 
 ### Kommunikationsmønster
+- **API Gateway Mønster**: Simpelt centralt indgangspunkt routing requests til services
 - **Synkron HTTP/REST**: Al inter-service kommunikation bruger REST APIs
 - **Ingen Message Queues**: Ingen asynkron messaging implementeret
 - **Docker DNS**: Services opdager hinanden via container navne
+- **Simple Proxy**: Gateway kalder services direkte og returnerer responses
 
 ### Data Lagring
-- **Account Service**: In-memory liste (planlagt migration til SQLite)
+- **Account Service**: SQLite database med modulariseret database lag i `database.py`
+  - Separat database modul for forbedret kodeorganisering
+  - Persistent lagring i `users.db` fil
+  - Schema: `users` tabel med id, username, password
+  - Funktioner: `init_db()`, `get_db_connection()`, `find_user_by_username()`, `add_user()`, `get_all_users()`
 - **Currency Service**: In-memory dictionary med statiske exchange rates
 - **Product Catalog**: External API (dummyjson.com) - ingen lokal lagring
-- **Ingen Persistent Database**: Al data er volatil og går tabt ved restart
+- **Delvis Persistence**: Brugerdata persisterer mellem genstart, produkt/valutadata er volatil
 
 ### Skalerbarhed
 - **Uafhængige Services**: Hver service kan skaleres uafhængigt
@@ -249,14 +282,19 @@ graph TD
 - **Docker Orchestration**: Bruger Docker Compose til lokal deployment
 
 ### Sikkerhedsovervejelser
-- **Autentificering**: Account service bruger Authorization header
-- **Ingen API Gateway**: Services eksponeres direkte på forskellige porte
-- **Plain Text Data**: Credentials gemmes in-memory uden kryptering
-- **Ingen HTTPS**: Al kommunikation over HTTP
+- **JWT Autentificering**: Account service bruger Flask-JWT-Extended til token-baseret autentificering
+  - JWT tokens genereres ved login og returneres i Authorization header som `Bearer <token>`
+  - Beskyttede endpoints valideres med `@jwt_required()` decorator
+  - Secret key gemt i `.env` fil (ikke committed til git)
+- **API Gateway**: Simpelt centralt indgangspunkt på port 8000, services også eksponeret på individuelle porte
+  - Gateway forwarder JWT tokens korrekt i Authorization header
+- **Minimal Fejlhåndtering**: Gateway returnerer responses som de er fra services
+- **Password Storage**: Passwords gemmes i plaintext i SQLite (bør bruge hashing i produktion)
+- **Ingen HTTPS**: Al kommunikation over HTTP (bør bruge HTTPS i produktion)
 
 ### Eksterne Afhængigheder
-- **dummyjson.com**: Leverer produkt og bruger seed data
-- **Single Point of Failure**: External API utilgængelighed påvirker servicen
+- **dummyjson.com**: Leverer produkt seed data
+- **Single Point of Failure**: External API utilgængelighed påvirker Product Catalog Service
 
 ## Deployment Instruktioner
 
@@ -268,26 +306,28 @@ graph TD
    ```
 
 3. **Adgangspunkter**:
+   - API Gateway: http://localhost:8000
    - Web UI: http://localhost:8501
-   - Account API: http://localhost:5010
-   - Currency API: http://localhost:5020
-   - Product API: http://localhost:5030
+   - Account API: http://localhost:5010 (eller via Gateway: http://localhost:8000/api/account/*)
+   - Currency API: http://localhost:5020 (eller via Gateway: http://localhost:8000/api/currency/*)
+   - Product API: http://localhost:5030 (eller via Gateway: http://localhost:8000/api/products/*)
 
 4. **Service Opstartsrækkefølge**:
-   - Currency Service starter først
+   - Account, Currency Services starter først (uafhængige)
    - Product Catalog Service (afhænger af Currency)
+   - API Gateway (afhænger af Account, Currency, Product Catalog)
    - UI Service (afhænger af Product Catalog)
-   - Account Service (uafhængig)
 
 ## Fremtidige Forbedringsmuligheder
 
-1. **Persistent Storage**: Migrer til SQLite eller PostgreSQL
-2. **API Gateway**: Tilføj central routing og autentificeringslag
-3. **Caching**: Implementer Redis til produkt og valutadata
-4. **Message Queue**: Tilføj RabbitMQ/Kafka til async operationer
-5. **Service Discovery**: Implementer Consul eller Eureka
-6. **Load Balancing**: Tilføj nginx eller Traefik
-7. **Monitoring**: Integrer Prometheus og Grafana
-8. **Logging**: Centraliseret logging med ELK stack
-9. **Security**: Tilføj OAuth2, HTTPS, secret management
-10. **Resilience**: Implementer circuit breakers og retry patterns
+1. **Password Hashing**: Implementer bcrypt eller argon2 til sikker password lagring
+2. **HTTPS/TLS**: Tilføj SSL certificates til sikker kommunikation
+3. **Forbedret Lagring**: Migrer Product/Currency services til persistent lagring
+4. **Token Refresh**: Implementer refresh tokens til længere sessioner
+5. **Caching**: Implementer Redis til produkt og valutadata
+6. **Message Queue**: Tilføj RabbitMQ/Kafka til async operationer
+7. **Service Discovery**: Implementer Consul eller Eureka
+8. **Load Balancing**: Tilføj nginx eller Traefik
+9. **Monitoring**: Integrer Prometheus og Grafana
+10. **Logging**: Centraliseret logging med ELK stack
+11. **Resilience**: Implementer circuit breakers og retry patterns

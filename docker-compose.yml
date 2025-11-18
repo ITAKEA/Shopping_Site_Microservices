@@ -1,4 +1,18 @@
 services:
+  gateway:
+    build:
+      context: ./ApiGateway
+      dockerfile: Dockerfile
+    ports:
+      - "8000:5000"
+    networks:
+      - app-network
+    restart: unless-stopped
+    depends_on:
+      - acc
+      - cur
+      - products
+
   acc:
     build:
       context: ./AccountService
