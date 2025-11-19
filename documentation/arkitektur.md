@@ -5,11 +5,15 @@ Dette dokument giver et omfattende arkitektonisk overblik over Shopping Site Mic
 ## System Oversigt
 
 Applikationen består af 5 microservices deployed ved hjælp af Docker:
-- **API Gateway**: Central routing og indgangspunkt for alle services
-- **Account Service**: Brugerregistrering og autentificering (modulariseret med separat database lag)
+- **UI Service**: Web-baseret brugerinterface (Streamlit) - primært indgangspunkt
+- **API Gateway**: Alternativt REST API indgangspunkt for eksterne klienter
+- **Account Service**: Brugerregistrering og JWT autentificering (SQLite database)
 - **Currency Service**: Valutakonverteringsfunktionalitet
 - **Product Catalog Service**: Produktlisting og administration
-- **UI Service**: Web-baseret brugerinterface (Streamlit)
+
+**To adgangsveje:**
+1. **UI Service** (primær) - kalder Account og Product services direkte
+2. **API Gateway** (alternativ) - unified REST API for eksterne klienter
 
 ## Arkitektur Diagram
 
@@ -21,15 +25,15 @@ graph TB
 
     subgraph Docker["Docker Network (app-network)"]
         subgraph Gateway["API Gateway :8000"]
-            GatewayService["Flask REST API<br/>- Request Routing<br/>- Simple Proxy<br/>- Unified API"]
+            GatewayService["Flask REST API<br/>- Request Routing<br/>- JWT Token Forwarding<br/>- Simple Proxy<br/>- Alternative Entry Point"]
         end
 
         subgraph UI["UI Service :8501"]
-            Streamlit["Streamlit Web Interface<br/>- Product Display<br/>- Images & Details<br/>- Prices in DKK"]
+            Streamlit["Streamlit Web Interface<br/>- Product Display<br/>- Login & Registration<br/>- JWT Token Storage<br/>- PRIMARY ENTRY POINT"]
         end
 
         subgraph Account["Account Service :5010"]
-            AccService["Flask REST API<br/>- User Registration<br/>- Login/Logout<br/>- Profile Management<br/><br/>SQLite Database"]
+            AccService["Flask REST API<br/>- User Registration<br/>- JWT Authentication<br/>- Profile Management<br/><br/>SQLite Database"]
         end
 
         subgraph Currency["Currency Service :5020"]
@@ -46,15 +50,15 @@ graph TB
         APIClient["API Client"]
     end
 
-    Browser -->|HTTP :8501| Streamlit
-    APIClient -->|HTTP :8000| GatewayService
+    Browser -->|HTTP :8501<br/>Primary Entry| Streamlit
+    APIClient -->|HTTP :8000<br/>Alternative Entry| GatewayService
 
-    GatewayService -->|/api/account/*| AccService
-    GatewayService -->|/api/currency/*| CurService
-    GatewayService -->|/api/products/*| ProdService
+    GatewayService -.->|/api/account/*| AccService
+    GatewayService -.->|/api/currency/*| CurService
+    GatewayService -.->|/api/products/*| ProdService
 
-    Streamlit -->|GET /products| ProdService
-    Streamlit -->|POST /login, /profile| AccService
+    Streamlit -->|Direct: GET /products| ProdService
+    Streamlit -->|Direct: POST /login, /profile<br/>JWT Auth| AccService
     ProdService -->|POST /convert| CurService
     ProdService -->|GET products| DummyJSON
 
@@ -89,8 +93,8 @@ sequenceDiagram
     alt User Login
         User->>UI: Login
         UI->>AS: POST /login<br/>{username, password}
-        AS-->>UI: Auth token in header
-        UI-->>User: Login successful
+        AS-->>UI: JWT token in Authorization header<br/>Bearer <token>
+        UI-->>User: Login successful (token stored)
     end
 
     UI->>PS: GET /products

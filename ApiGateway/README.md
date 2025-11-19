@@ -6,16 +6,12 @@ API Gateway fungerer som simpel central indgangspunkt for alle microservices i S
 
 - **Request Routing**: Dirigerer requests til korrekte microservices
 - **Unified API**: Giver et ensartet API interface for alle services
-- **Health Monitoring**: Health check endpoint for system status
 - **Simple Proxy**: Kalder services direkte og returnerer responses
+- **JWT Token Forwarding**: Videregiver Bearer tokens i Authorization header
+
+**Note**: UI Service kalder mikroservices direkte - API Gateway er et alternativt indgangspunkt til systemet.
 
 ## API Endpoints
-
-### Root
-- **GET /** - API Gateway information og tilgængelige endpoints
-
-### Health Check
-- **GET /health** - System health status
 
 ### Account Service Routes (prefix: `/api/account`)
 - **POST /api/account/profile** - Registrer ny bruger
@@ -70,8 +66,61 @@ Gateway eksponeres på port 8000 i docker-compose setup:
   - Query parameter handling
   - Response status forwarding
 
+## Arkitektur Diagram
+
+```mermaid
+graph LR
+    subgraph External["Externe Klienter"]
+        EXT[External API Clients]
+    end
+
+    subgraph Gateway["API Gateway :8000"]
+        G[API Routes Handler]
+    end
+
+    subgraph UI["UI Service :8501"]
+        U[Streamlit Web UI]
+    end
+
+    subgraph Account["Account Service :5010"]
+        A[User Management<br/>JWT Auth]
+    end
+
+    subgraph Product["Product Catalog :5030"]
+        P[Product Data]
+    end
+
+    subgraph Currency["Currency Service :5020"]
+        C[Currency Conversion]
+    end
+
+    %% UI Service connections (direct)
+    U -->|Direct call| A
+    U -->|Direct call| P
+
+    %% API Gateway connections (alternative entry)
+    EXT -->|REST API| G
+    G -->|Forward| A
+    G -->|Forward| P
+    G -->|Forward| C
+
+    %% Product service dependencies
+    P -->|Currency conversion| C
+
+    style UI fill:#e1f5ff
+    style Gateway fill:#ffe8e8
+    style Account fill:#fff4e1
+    style Product fill:#f3e5f5
+    style Currency fill:#e8f5e9
+    style External fill:#f5f5f5
+```
+
+**To indgangspunkter:**
+1. **UI Service** (primær) - Kalder Account og Product services direkte
+2. **API Gateway** (alternativ) - REST API for eksterne klienter
+
 ## Noter
 
 - Gateway kalder services direkte uden kompleks fejlhåndtering
-- Authorization header videregives for GET /profile endpoint
+- JWT Bearer tokens videregives i Authorization header for autentificerede requests
 - Simpel og let at forstå implementation
