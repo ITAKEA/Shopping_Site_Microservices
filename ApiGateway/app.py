@@ -55,7 +55,9 @@ def logout():
 # Product Service routes
 @app.route('/api/products', methods=['GET'])
 def get_products():
-    response = requests.get(f"{PRODUCT_SERVICE_URL}/products")
+    auth_header = request.headers.get('Authorization')
+    headers = {'Authorization': auth_header} if auth_header else {}
+    response = requests.get(f"{PRODUCT_SERVICE_URL}/products", headers=headers)
     return jsonify(response.json()), response.status_code
 
 
