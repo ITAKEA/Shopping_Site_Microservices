@@ -1,6 +1,14 @@
 from flask import Flask, request, jsonify
+from flask_jwt_extended import JWTManager, jwt_required
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 app = Flask(__name__)
+app.config['JWT_SECRET_KEY'] = os.getenv('KEY')
+
+jwt = JWTManager(app)
 
 EXCHANGE_RATES = {
     'USD': 1.0,
@@ -10,6 +18,7 @@ EXCHANGE_RATES = {
 }
 
 @app.route('/convert', methods=['POST'])
+@jwt_required()
 def convert_currency():
         data = request.get_json()
         amount = data.get('amount')
@@ -18,7 +27,7 @@ def convert_currency():
 
         usd_amount = amount / EXCHANGE_RATES[from_currency]
         converted_amount = usd_amount * EXCHANGE_RATES[to_currency]
-        
+
         return jsonify({
             'original_amount': amount,
             'from_currency': from_currency,

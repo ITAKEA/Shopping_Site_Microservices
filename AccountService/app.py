@@ -45,8 +45,11 @@ def view_profile():
     return jsonify({'username': user['username'], 'id': user['id']}), 200
 
 @app.route('/profile', methods=['PUT'])
+@jwt_required()
 def edit_profile():
-    return jsonify(), 201
+    current_user = get_jwt_identity()
+    # TODO: Implement profile editing logic
+    return jsonify({'message': 'Profile update endpoint - not yet implemented', 'user': current_user}), 200
 
 @app.route('/login', methods=['POST'])
 def login():

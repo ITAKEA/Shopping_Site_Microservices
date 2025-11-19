@@ -86,25 +86,39 @@ with st.sidebar:
 # Main content - Product Catalog
 st.title("Product Catalog")
 
-try:
-    response = requests.get(PRODUCT_SERVICE_URL)
-    products = response.json()
+# Only show products if user is logged in
+if st.session_state.logged_in:
+    try:
+        # Include JWT token in Authorization header
+        headers = {'Authorization': st.session_state.auth_token}
+        response = requests.get(PRODUCT_SERVICE_URL, headers=headers)
 
-    for product in products:
-        with st.container():
-            col1, col2 = st.columns([1, 4])
+        if response.status_code == 401:
+            st.error("Your session has expired. Please log in again.")
+            st.session_state.logged_in = False
+            st.session_state.username = None
+            st.session_state.auth_token = None
+            st.rerun()
 
-            with col1:
-                if 'thumbnail' in product and product['thumbnail']:
-                    st.image(product['thumbnail'], width=100)
+        products = response.json()
 
-            with col2:
-                st.subheader(product['title'])
-                st.write(f"**Pris:** {product['dkk_price']} kr.")
-                st.write(f"**Mærke:** {product['brand']}")
-                st.write(f"**Kategori:** {product['category']}")
-                st.write(product['description'])
+        for product in products:
+            with st.container():
+                col1, col2 = st.columns([1, 4])
 
-            st.divider()
-except Exception as e:
-    st.error(f"Error loading products: {str(e)}")
+                with col1:
+                    if 'thumbnail' in product and product['thumbnail']:
+                        st.image(product['thumbnail'], width=100)
+
+                with col2:
+                    st.subheader(product['title'])
+                    st.write(f"**Pris:** {product['dkk_price']} kr.")
+                    st.write(f"**Mærke:** {product['brand']}")
+                    st.write(f"**Kategori:** {product['category']}")
+                    st.write(product['description'])
+
+                st.divider()
+    except Exception as e:
+        st.error(f"Error loading products: {str(e)}")
+else:
+    st.info("Please log in to view the product catalog.")
